@@ -1,11 +1,12 @@
 """Test Media Source initialization."""
 from unittest.mock import Mock, patch
-from urllib.parse import quote
 
 import pytest
+import yarl
 
 from homeassistant.components import media_source
 from homeassistant.components.media_player import MEDIA_CLASS_DIRECTORY, BrowseError
+from homeassistant.components.media_player.const import MEDIA_CLASS_MUSIC
 from homeassistant.components.media_source import const
 from homeassistant.setup import async_setup_component
 
@@ -159,7 +160,13 @@ async def test_websocket_resolve_media(hass, hass_ws_client, filename):
 
     client = await hass_ws_client(hass)
 
-    media = media_source.models.PlayMedia(f"/media/local/{filename}", "audio/mpeg")
+    media = media_source.models.PlayMedia(
+        f"/media/local/{filename}",
+        "audio/mpeg",
+        media_class=MEDIA_CLASS_MUSIC,
+        title="Epic Sax",
+        thumbnail="/hello-world.jpg",
+    )
 
     with patch(
         "homeassistant.components.media_source.async_resolve_media",
@@ -177,8 +184,15 @@ async def test_websocket_resolve_media(hass, hass_ws_client, filename):
 
     assert msg["success"]
     assert msg["id"] == 1
-    assert msg["result"]["url"].startswith(quote(media.url))
     assert msg["result"]["mime_type"] == media.mime_type
+    assert msg["result"]["media_class"] == MEDIA_CLASS_MUSIC
+    assert msg["result"]["title"] == "Epic Sax"
+
+    # Validate url and thumbnail are signed.
+    for key in ("url", "thumbnail"):
+        parsed = yarl.URL(msg["result"][key])
+        assert parsed.path == getattr(media, key)
+        assert "authSig" in parsed.query
 
     with patch(
         "homeassistant.components.media_source.async_resolve_media",
